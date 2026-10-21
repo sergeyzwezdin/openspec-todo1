@@ -3,21 +3,24 @@
 import { useEffect, useState, type FormEvent, type ReactElement } from "react";
 import { toast } from "sonner";
 
+import { CompletionChart } from "@/components/completion-chart";
 import { TodoItem, type TodoItemHandlers } from "@/components/todo-item";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { showError } from "@/lib/show-error";
 import type { Task, TaskPatch } from "@/lib/tasks/store";
 import { MAX_TITLE_LENGTH, validateTitle } from "@/lib/tasks/validate-title";
 
 type LoadStatus = "loading" | "ready" | "failed";
 
-/** Todo list backed by the `/api/tasks` API: add, edit, complete and delete tasks with undo. */
+/** Todo list backed by the `/api/tasks` API, with undo for deletes and the daily completions chart below. */
 export const TodoList = (): ReactElement => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [status, setStatus] = useState<LoadStatus>("loading");
   const [draft, setDraft] = useState("");
   const [isAdding, setIsAdding] = useState(false);
+  const [statsRefreshKey, setStatsRefreshKey] = useState(0);
   const draftValidation = validateTitle(draft);
 
   useEffect(() => {
@@ -59,6 +62,7 @@ export const TodoList = (): ReactElement => {
   const handleToggle = async (task: Task, done: boolean): Promise<void> => {
     try {
       putTask(await updateTask(task.id, { done }));
+      setStatsRefreshKey((current) => current + 1);
     } catch (error) {
       showError("Could not update the task", error);
     }
@@ -103,33 +107,36 @@ export const TodoList = (): ReactElement => {
   };
 
   return (
-    <Card className="w-full max-w-md">
-      <CardHeader>
-        <CardTitle>Tasks</CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-6">
-        {status === "loading" && <p className="text-sm text-muted-foreground">Loading tasks…</p>}
-        {status === "failed" && <p className="text-sm text-muted-foreground">Tasks could not be loaded.</p>}
-        {status === "ready" && (
-          <>
-            <form onSubmit={(event) => void handleAdd(event)} className="flex gap-2">
-              <Input
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                maxLength={MAX_TITLE_LENGTH}
-                placeholder="What needs to be done?"
-                aria-label="New task title"
-              />
-              <Button type="submit" disabled={!draftValidation.ok || isAdding}>
-                Add
-              </Button>
-            </form>
-            <TaskSection title="Active" tasks={tasks.filter(({ done }) => !done)} handlers={handlers} />
-            <TaskSection title="Completed" tasks={tasks.filter(({ done }) => done)} handlers={handlers} />
-          </>
-        )}
-      </CardContent>
-    </Card>
+    <div className="flex w-full max-w-md flex-col gap-4">
+      <Card className="w-full">
+        <CardHeader>
+          <CardTitle>Tasks</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-6">
+          {status === "loading" && <p className="text-sm text-muted-foreground">Loading tasks…</p>}
+          {status === "failed" && <p className="text-sm text-muted-foreground">Tasks could not be loaded.</p>}
+          {status === "ready" && (
+            <>
+              <form onSubmit={(event) => void handleAdd(event)} className="flex gap-2">
+                <Input
+                  value={draft}
+                  onChange={(event) => setDraft(event.target.value)}
+                  maxLength={MAX_TITLE_LENGTH}
+                  placeholder="What needs to be done?"
+                  aria-label="New task title"
+                />
+                <Button type="submit" disabled={!draftValidation.ok || isAdding}>
+                  Add
+                </Button>
+              </form>
+              <TaskSection title="Active" tasks={tasks.filter(({ done }) => !done)} handlers={handlers} />
+              <TaskSection title="Completed" tasks={tasks.filter(({ done }) => done)} handlers={handlers} />
+            </>
+          )}
+        </CardContent>
+      </Card>
+      <CompletionChart refreshKey={statsRefreshKey} />
+    </div>
   );
 };
 
@@ -158,11 +165,6 @@ const TaskSection = ({ title, tasks, handlers }: TaskSectionProps): ReactElement
 /** Orders tasks newest first by creation time, the order both sections use. */
 const sortNewestFirst = (tasks: Task[]): Task[] =>
   [...tasks].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
-
-/** Shows an error toast with the server's error message, when there is one, as its description. */
-const showError = (message: string, error: unknown): void => {
-  toast.error(message, { description: error instanceof Error ? error.message : undefined });
-};
 
 /** Loads all tasks from the server. */
 const fetchTasks = async (): Promise<Task[]> => {
