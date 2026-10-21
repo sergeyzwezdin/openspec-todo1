@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "openspec-project",
-  description: "Next.js + shadcn/ui demo",
+  title: "Todo list",
+  description: "Add, edit, complete and delete tasks.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
